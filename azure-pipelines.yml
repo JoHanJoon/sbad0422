@@ -1,0 +1,58 @@
+# Maven
+# Build your Java project and run tests with Apache Maven.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: Build
+  displayName: Build Stage
+  jobs:
+  - job: Build
+    displayName: Build Maven Project
+    steps:
+    - task: Maven@3
+      displayName: 'Maven Package Build'
+      inputs:
+        mavenPomFile: 'pom.xml'
+    - task: CopyFiles@2
+      displayName: 'Copy Files To Artifact-Staging-Dirtectory'
+      inputs:
+        sourceFolder: '$(System.DefaultWorkingDirectory)'
+        contents: '**/target/*.?(war|jar)'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+    - upload: $(Build.ArtifactStagingDirectory)
+      artifact: dropfile
+
+- stage: Deploy
+  displayName: Deploying Stage
+  jobs:
+  - deployment: DeployWebApp
+    displayName: 'Deploying Web App'
+    pool: 
+      vmImage: 'ubuntu-latest'
+    environment:
+     name: 'vmset_20220422'
+     resourceType: VirtualMachine
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - script: |
+              sudo cp $(Pipeline.Workspace)/dropfile/target/*.jar /artifacts/
+            displayName: Copy jar File  
+          - script: |
+              process_name_check=`sudo ps -ef | grep -v 'grep' | grep sbad0422 | wc -l`
+              if [ "$process_name_check" == "0"  ]; then
+                sudo java -jar /artifacts/*.jar >/dev/null 2>&1 &
+              else
+                sudo kill $(ps aux | grep sbad0422 | grep -v 'grep' | awk '{print $2}')
+                sudo sleep 8
+                sudo java -jar /artifacts/*.jar >/dev/null 2>&1 &
+              fi
+            displayName: Java EXE
